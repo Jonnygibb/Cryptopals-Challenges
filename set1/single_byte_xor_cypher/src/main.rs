@@ -73,34 +73,71 @@ impl fmt::Display for DecodeHexError {
 impl std::error::Error for DecodeHexError {}
 
 // Frequency of letter appearance in concise oxford dictionary(9th edition, 1995).
-static ETAOIN_SHRDLU: phf::Map<char, f32> = phf_map! {
-    'e' => 11.1607,
-    'a' => 8.4966,
-    'r' => 7.5809,
-    'i' => 7.5448,
-    'o' => 7.1635,
-    't' => 6.9509,
-    'n' => 6.6544,
-    's' => 5.7351,
-    'l' => 5.4893,
-    'c' => 4.5388,
-    'u' => 3.6308,
-    'd' => 3.3844,
-    'p' => 3.1671,
-    'm' => 3.0129,
-    'h' => 3.0034,
-    'g' => 2.4705,
-    'b' => 2.0720,
-    'f' => 1.8121,
-    'y' => 1.7779,
-    'w' => 1.2899,
-    'k' => 1.1016,
-    'v' => 1.0074,
-    'x' => 0.2902,
-    'z' => 0.2722,
-    'j' => 0.1965,
-    'q' => 0.1962,
+static ETAOIN_SHRDLU: phf::Map<u8, f32> = phf_map! {
+    b'e' => 11.1607,
+    b'a' => 8.4966,
+    b'r' => 7.5809,
+    b'i' => 7.5448,
+    b'o' => 7.1635,
+    b't' => 6.9509,
+    b'n' => 6.6544,
+    b's' => 5.7351,
+    b'l' => 5.4893,
+    b'c' => 4.5388,
+    b'u' => 3.6308,
+    b'd' => 3.3844,
+    b'p' => 3.1671,
+    b'm' => 3.0129,
+    b'h' => 3.0034,
+    b'g' => 2.4705,
+    b'b' => 2.0720,
+    b'f' => 1.8121,
+    b'y' => 1.7779,
+    b'w' => 1.2899,
+    b'k' => 1.1016,
+    b'v' => 1.0074,
+    b'x' => 0.2902,
+    b'z' => 0.2722,
+    b'j' => 0.1965,
+    b'q' => 0.1962,
 };
+
+pub fn is_alphabetic(c: u8) -> bool {
+    if (91 > c && c > 64) || (123 > c && c > 96) {
+        return true;
+    } else {
+        return false;
+    };
+}
+
+fn calculate_frequency_quotient(decipher_attempt: &[u8]) -> f32 {
+    let mut total_deviation = 0.0;
+    let mut total_letters = 0;
+
+    // Create a hashmap to count the occurrence frequency of each byte.
+    let mut byte_counts: HashMap<u8, f32> = HashMap::new();
+    for &byte in decipher_attempt {
+        if is_alphabetic(byte) {
+            *byte_counts.entry(byte.to_ascii_lowercase()).or_insert(0.0) += 1.0;
+            total_letters += 1;
+        }
+    }
+
+    for &byte in decipher_attempt {
+        if is_alphabetic(byte) {
+            let observed_count = byte_counts.get(&byte.to_ascii_lowercase()).unwrap_or(&0.0);
+            let expected_count = ETAOIN_SHRDLU.get(&byte.to_ascii_lowercase()).unwrap_or(&0.0);
+            total_deviation += (observed_count - expected_count).abs();
+        }
+    }
+
+    // Normalize by dividing by the total number of letters
+    if total_letters > 0 {
+        total_deviation / total_letters as f32
+    } else {
+        std::f32::MAX // Avoid division by zero
+    }
+}
 
 fn main() {
     let cypher_text: &str = "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736";
@@ -113,25 +150,35 @@ fn main() {
         }
     };
 
+    let mut cipher_key = 0;
+    let mut text: Vec<u8> = Vec::new();
+    let mut lowest_fq: f32 = 0.0;
+
 
     // Iterate through the total possible values of a single byte.
     for i in 0..=255 {
         // Apply XOR with byte value.
         let decipher_attempt: Vec<u8> = bytes.iter().map(|&b| b ^ i).collect();
 
-        let char_vec: Vec<char> = decipher_attempt.iter().map(|&b| b as char).collect();
+        let fq = calculate_frequency_quotient(&decipher_attempt);
 
-        // Count the occurrences of each character.
-        let mut letter_counts: HashMap<char, usize> = HashMap::new();
-        for &c in &char_vec {
-            *letter_counts.entry(c).or_insert(0) += 1;
+        if (fq < lowest_fq) || (lowest_fq == 0.0) {
+            lowest_fq = fq;
+            text = decipher_attempt;
+            cipher_key = i;
         }
 
-        println!("Key: {:x}, Counts: {:?}", i, letter_counts);
-        
-        let fq = 0;
+        println!("Key: {:x}, FQ: {}", i, fq);
+    }
 
-        // TO DO: Frequency quotient code
+    // Convert Vec<u8> to String
+    if let Ok(string_result) = String::from_utf8(text) {
+        // Successfully converted to String
+        let result_string = string_result;
+        println!("Converted String: {}", result_string);
+    } else {
+        // Conversion failed
+        println!("Failed to convert to String. Not valid UTF-8.");
     }
     
 }
