@@ -1,11 +1,8 @@
-use std::str;
-use std::collections::HashMap;
-
 use hex;
-use phf::{phf_map};
+use phf::phf_map;
 
 // Frequency of letter appearance in concise oxford dictionary(9th edition, 1995).
-static ETAOIN_SHRDLU: phf::Map<u8, f32> = phf_map! {
+static EXPECTED_FREQUENCY: phf::Map<u8, f32> = phf_map! {
     b'e' => 11.1607,
     b'a' => 8.4966,
     b'r' => 7.5809,
@@ -34,93 +31,60 @@ static ETAOIN_SHRDLU: phf::Map<u8, f32> = phf_map! {
     b'q' => 0.1962,
 };
 
-pub fn is_control(u: u8) -> bool {
-    u < 0x20 || u == 0x7F
+pub fn xor_by_single_byte(stream: &Vec<u8>, byte: u8) -> Vec<u8>{
+    return stream.iter().map(|b| b ^ byte).collect();
 }
 
-pub fn is_alphabetic(u: u8) -> bool {
-    (u >= 0x41 && u <= 0x5A) || (u >= 0x61 && u <= 0x7A)
+pub fn is_alphabetic(byte: u8) -> bool {
+    (byte >= 0x41 && byte <= 0x5A) || (byte >= 0x61 && byte <= 0x7A)
 }
 
-pub fn single_byte_xor(stream: &Vec<u8>, key: u8) -> Vec<u8> {
-    return stream.iter().map(|b| b ^ key).collect();
-}
-
-pub fn calculate_character_counts(stream: &Vec<u8>) -> HashMap<u8, f32> {
-    let mut char_counts = HashMap::<u8, f32>::new();
-    for byte in stream {
-        if is_alphabetic(*byte) {
-            *char_counts.entry(byte.to_ascii_lowercase()).or_insert(0.0) += 1.0;
-        } else {
-            continue;
-        }
-        
-    }
-    return char_counts;
-}
-
-fn calculate_fitting_quotient(stream: &Vec<u8>) -> f32{
-    let b = stream.as_slice();
-
-    // If bytes are not ascii characters, return maximum value.
-    if !b.is_ascii() {
-        return std::f32::MAX;
+pub fn score_byte(byte: u8) -> f32 {
+    if is_alphabetic(byte) {
+        return match EXPECTED_FREQUENCY.get(&byte) {
+            Some(frequency) => *frequency,
+            None => 0.0,
+        };
     } else {
-        let char_counts = calculate_character_counts(stream);
-        let length = b.len() as f32;
-
-        // Calculate the fitting quotient
-        let fitting_quotient = ETAOIN_SHRDLU.entries.iter().fold(0.0, |a, &(c, frequency)| {
-            let expected_count = frequency / 100.0 * length;
-            let actual_count = char_counts.get(&c).unwrap_or(&0.0);
-            a + (expected_count - actual_count).powi(2)
-        });
-
-        return fitting_quotient;
+        return 0.0;
     }
 
 
 }
 
 fn main() {
-    // Encoded text given by the challenge.
-    let cipher_text: &str = "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736";
+    let encrypted_hex: &str = "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736";
 
-    // Decode the text into bytes.
-    let bytes = match hex::decode(&cipher_text) {
-        Ok(decoded) => decoded,
-        Err(error) => panic!("Error: {}", error),
+    let encrypted_bytes = match hex::decode(&encrypted_hex) {
+        Ok(byte_stream) => byte_stream,
+        Err(e) => panic!("Error thrown: {}", e),
     };
 
-    let mut lowest_fq = 0.0;
-    let mut cipher_key = 0;
-    let mut text: Vec<u8> = vec!(0);
+    let mut cipher_key: u8 = 0;
+    let mut highest_score: f32 = 0.0;
+    let mut decrypted_bytes: Vec<u8> = Vec::new();
 
     for key in 0..=255 {
-        // Perform the single byte XOR.
-        let decipher_attempt = single_byte_xor(&bytes, key);
+        let decipher_attempt = xor_by_single_byte(&encrypted_bytes, key);
 
-        // Find the occurances of character in the deciphered stream.
-        // let char_counts: HashMap<u8, f32> = calculate_character_counts(&decipher_attempt);
-        
-        // Iterate over the bytes of byte stream. 
-        // If alphabetic or compare with ETAOIN_SHRDLU
-        // If space, tab, newline do nothing.
-        // If control character, return large value
-        // if none of above, 
-        let fitting_quotient = calculate_fitting_quotient(&decipher_attempt);
+        let mut total_score = 0.0;
 
-        if fitting_quotient < lowest_fq || lowest_fq == 0.0 {
-            lowest_fq = fitting_quotient;
-            cipher_key = key;
-            text = decipher_attempt;
+        for byte in &decipher_attempt {
+            total_score += score_byte(*byte);
         }
-        
+
+        if total_score > highest_score {
+            cipher_key = key;
+            highest_score = total_score;
+            decrypted_bytes = decipher_attempt;
+        }
     }
 
-    println!("Key: {:x}, fitting quotient {}", cipher_key, lowest_fq);
-    let deciphered_text_chars: Vec<char> = single_byte_xor(&text, cipher_key).iter().map(|&byte| byte as char).collect();
-    let deciphered_text: String = deciphered_text_chars.into_iter().collect();
-    println!("{}", deciphered_text);
-    
+    println!("key: {}", cipher_key as char);
+
+    if let Ok(string_from_bytes) = String::from_utf8(decrypted_bytes) {
+        println!("Deciphered String: {}", string_from_bytes);
+    } else {
+        println!("String conversion failed");
+    }
 }
