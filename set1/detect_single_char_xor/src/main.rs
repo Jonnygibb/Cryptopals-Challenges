@@ -1,5 +1,6 @@
-use std::fs;
 use phf::phf_map;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 
 // Frequency of letter appearance in concise oxford dictionary(9th edition, 1995).
 static EXPECTED_FREQUENCY: phf::Map<u8, f32> = phf_map! {
@@ -50,56 +51,59 @@ pub fn score_byte(byte: u8) -> f32 {
     }
 }
 
-fn main() {
-    // Create path to the encrypted strings.
-    let file_path = "encrypted.txt";
+fn main() -> Result<(), std::io::Error> {
+    // Attempt to open file and propogate error if not (?).
+    let file = File::open("encrypted.txt")?;
 
-    // Read the hex contents of the file.
-    let mut contents: Vec<u8> = fs::read(file_path).expect("Should have been able to read the file");
-
-    // Remove the newline characters.
-    contents.retain(|&b| b != b'\n');
-
-    // Decode the contents from hex.
-    let bytes = match hex::decode(&contents) {
-        Ok(byte_stream) => byte_stream,
-        Err(e) => panic!("Error thrown: {}", e),
-    };
+    // Feed the contents of the file into a buffer reader.
+    let reader = BufReader::new(file);
 
     // Estblish variables to hold best scoring key and string.
     let mut cipher_key: u8 = 0;
     let mut highest_score: f32 = 0.0;
-    let mut decrypted_string: &[u8] = &[];
+    let mut decrypted_string: Vec<u8> = Vec::new();
 
-    // Try every 1 byte length xor on the contents.
-    for key in 0..=255 {
-        // XOR content with key value.
-        let decipher_attempt = xor_by_single_byte(&bytes, key);
+    // Iterate over the lines of the file.
+    for line in reader.lines() {
+        // Convert from hex String to Vec<u8>.
+        let raw_bytes = match hex::decode(line?) {
+            Ok(decoded) => decoded,
+            Err(e) => panic!("Could not decode from hex: {}", e),
+        };
+        
+        // Iterate through all the XOR keys and score the resulting stream.
+        for key in 0..=255 {
 
-        // Initialise a blank score.
-        let mut total_score = 0.0;
+            // Try a key from the set of all one byte keys.
+            let decipher_attempt = xor_by_single_byte(&raw_bytes, key);
 
-        // Loop over every 60 character sliding window.
-        for window in decipher_attempt.windows(60) {
-            for i in 0..60 {
-                total_score += score_byte(window[i]);
+            // Establish a variable to hold the score.
+            let mut total_score = 0.0;
+
+            for byte in &decipher_attempt {
+                total_score += score_byte(*byte);
             }
 
-            // Compare the score of each window with the best score so far.
+            //Compare the score of each window with the best score so far.
             if total_score > highest_score {
                 cipher_key = key;
                 highest_score = total_score;
-                decrypted_string = window;
+                decrypted_string = decipher_attempt;
             }
-
         }
     }
-
+    
+    // Print the best scoring string from the input data.
     println!("key: {}", cipher_key as char);
 
-    if let Ok(string_from_bytes) = String::from_utf8(decrypted_string.to_vec()) {
+    println!("{:?}", decrypted_string);
+
+    if let Ok(string_from_bytes) = String::from_utf8(decrypted_string) {
         println!("Deciphered String: {}", string_from_bytes);
     } else {
         println!("String conversion failed");
     }
+
+    Ok(())
+
 }
