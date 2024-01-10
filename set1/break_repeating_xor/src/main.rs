@@ -1,4 +1,5 @@
-
+use std::{fs, collections::HashMap};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 pub fn hamming_distance(string1 : &[u8], string2 : &[u8]) -> u32 {
     if string1.len() != string2.len() {
@@ -22,13 +23,37 @@ pub fn hamming_distance(string1 : &[u8], string2 : &[u8]) -> u32 {
 }
 
 fn main() {
-    let KEYSIZE = 0;
 
     // Test to see whether hamming_distance passes the test set in the challenge.
-    let string1 = b"this is a test";
-    let string2 = b"wokka wokka!!!";
+    assert_eq!(hamming_distance(b"this is a test", b"wokka wokka!!!"), 37);
 
-    let i = hamming_distance(string1, string2);
+    // Read the contents of the file into a Vec<u8>.
+    let mut b64 = match fs::read("base64.txt") {
+        Ok(read) => read,
+        Err(e) => panic!("Could not read file: {}", e),
+    };
 
-    println!("Test value is: {}", i);
+    // remove the newline characters from the b64 input.
+    b64.retain(|byte| *byte != b'\n');
+
+    // Decode the text from base64.
+    let encoded = match STANDARD.decode(b64) {
+        Ok(result) => result,
+        Err(e) => panic!("Could not decode from base64: {e}"),
+    };
+
+    // Create a new hashmap to store the keylengths and hamming distances.
+    let mut key_scores: HashMap<u8, u32> = HashMap::new();
+
+    for keysize in 2..=40 {
+        let first_chunk: &[u8] = &encoded[0..keysize as usize];
+        let second_chunk: &[u8] = &encoded[keysize as usize..keysize as usize + keysize as usize];
+
+        // Insert each keylength and hamming distances to the hashmap.
+        key_scores.insert(keysize, hamming_distance(first_chunk, second_chunk));
+    }
+
+    println!("{:?}", key_scores);
+
+    
 }
