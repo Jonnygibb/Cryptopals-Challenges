@@ -1,4 +1,4 @@
-use std::{fs, collections::HashMap};
+use std::fs;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 pub fn hamming_distance(string1 : &[u8], string2 : &[u8]) -> u32 {
@@ -42,16 +42,19 @@ fn main() {
         Err(e) => panic!("Could not decode from base64: {e}"),
     };
 
-    // Create a new hashmap to store the keylengths and hamming distances.
-    let mut key_scores: HashMap<u8, u32> = HashMap::new();
+    // Create a Vector of tuples to store the keylengths and hamming distances.
+    let mut key_scores: Vec<(u8, u32)> = Vec::new();
 
     for keysize in 2..=40 {
-        let first_chunk: &[u8] = &encoded[0..keysize as usize];
-        let second_chunk: &[u8] = &encoded[keysize as usize..keysize as usize + keysize as usize];
+        let first_chunk: &[u8] = &encoded[0..keysize];
+        let second_chunk: &[u8] = &encoded[keysize..keysize + keysize];
 
-        // Insert each keylength and hamming distances to the hashmap.
-        key_scores.insert(keysize, hamming_distance(first_chunk, second_chunk));
+        // Insert each keylength and hamming distances to the Vector.
+        key_scores.push((keysize.try_into().unwrap(), hamming_distance(first_chunk, second_chunk)));
     }
+
+    // Sort by hamming distance values.
+    key_scores.sort_by(|a, b| a.1.cmp(&b.1));
 
     println!("{:?}", key_scores);
 
