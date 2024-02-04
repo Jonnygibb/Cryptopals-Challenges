@@ -1,37 +1,63 @@
-use std::fs;
+use std::{fs, collections::HashMap};
 use phf::phf_map;
 use std::cmp::Ordering;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
-// Frequency of letter appearance in concise oxford dictionary(9th edition, 1995).
-static EXPECTED_FREQUENCY: phf::Map<u8, f32> = phf_map! {
-    b'e' => 11.1607,
-    b'a' => 8.4966,
-    b'r' => 7.5809,
-    b'i' => 7.5448,
-    b'o' => 7.1635,
-    b't' => 6.9509,
-    b'n' => 6.6544,
-    b's' => 5.7351,
-    b'l' => 5.4893,
-    b'c' => 4.5388,
-    b'u' => 3.6308,
-    b'd' => 3.3844,
-    b'p' => 3.1671,
-    b'm' => 3.0129,
-    b'h' => 3.0034,
-    b'g' => 2.4705,
-    b'b' => 2.0720,
-    b'f' => 1.8121,
-    b'y' => 1.7779,
-    b'w' => 1.2899,
-    b'k' => 1.1016,
-    b'v' => 1.0074,
-    b'x' => 0.2902,
-    b'z' => 0.2722,
-    b'j' => 0.1965,
-    b'q' => 0.1962,
+// Source:
+// Lee, E. Stewart. "Essays about Computer Security" (PDF). University of Cambridge Computer Laboratory. p. 181.
+static EXPECTED_FREQUENCIES: phf::Map<u8, f64> = phf_map! {
+    b' ' => 0.1217, // Whitespace
+    b'.' => 0.0657,  // Others
+    b'a' => 0.0609,
+    b'b' => 0.0105,
+    b'c' => 0.0284,
+    b'd' => 0.0292,
+    b'e' => 0.1136,
+    b'f' => 0.0179,
+    b'g' => 0.0138,
+    b'h' => 0.0341,
+    b'i' => 0.0544,
+    b'j' => 0.0024,
+    b'k' => 0.0041,
+    b'l' => 0.0292,
+    b'm' => 0.0276,
+    b'n' => 0.0544,
+    b'o' => 0.0600,
+    b'p' => 0.0195,
+    b'q' => 0.0024,
+    b'r' => 0.0495,
+    b's' => 0.0568,
+    b't' => 0.0803,
+    b'u' => 0.0243,
+    b'v' => 0.0097,
+    b'w' => 0.0138,
+    b'x' => 0.0024,
+    b'y' => 0.0130,
+    b'z' => 0.0003,
 };
+
+pub fn chi_squared_test(ciphertext: &[u8]) -> f64 {
+    
+    // Calculate the observed frequency of characters in the ciphertext.
+    let mut observed_freq = HashMap::<u8, f32>::new();
+    for char in ciphertext {
+        if is_alphabetic(*char) {
+            *observed_freq.entry(char.to_ascii_lowercase()).or_insert(0.0) += 1.0;
+        } else {
+            continue;
+        }
+    }
+
+    let mut chi_squared = 0.0;
+
+    for (&letter, &observation) in observed_freq.iter() {
+        let expected = EXPECTED_FREQUENCIES.get(&letter).unwrap_or(&0f64) * ciphertext.len() as f64;
+        chi_squared += ((observation as f64 - expected).powi(2)) / expected;
+    }
+
+    return chi_squared
+
+}
 
 pub fn xor_by_single_byte(stream: &[u8], byte: u8) -> Vec<u8>{
     return stream.iter().map(|b| b ^ byte).collect();
@@ -41,15 +67,26 @@ pub fn is_alphabetic(byte: u8) -> bool {
     (byte >= 0x41 && byte <= 0x5A) || (byte >= 0x61 && byte <= 0x7A)
 }
 
-pub fn score_byte(byte: u8) -> f32 {
-    if is_alphabetic(byte) {
-        return match EXPECTED_FREQUENCY.get(&byte) {
-            Some(frequency) => *frequency,
-            None => 0.0,
-        };
-    } else {
-        return 0.0;
+pub fn is_control(u: u8) -> bool {
+    u < 0x20 || u == 0x7F
+}
+
+pub fn calculate_score(ciphertext: &[u8]) -> f64 {
+    
+    // If any bytes in the ciphertext are non-ascii, return max score.
+    if !ciphertext.is_ascii() {
+        return std::f64::MAX;
     }
+
+    // If any bytes in the ciphertext are control chars and not a newline,
+    // return max score.
+    if ciphertext.iter().any(|&c| is_control(c) && c != b'\n') {
+        return std::f64::MAX;
+    }
+
+    let chi_square_stat = chi_squared_test(ciphertext);
+
+    return chi_square_stat
 }
 
 
@@ -132,9 +169,9 @@ pub fn transpose(encoded_message: &[u8]) -> Vec<Vec<u8>> {
 }
 
 pub fn break_single_char_xor(message_chunk: &[u8]) -> u8 {
-    // Estblish variables to hold best scoring key and string.
+    // Estblish variables to hold the lowest scoring key attempt.
     let mut cipher_key: u8 = 0;
-    let mut highest_score: f32 = 0.0;
+    let mut lowest_score: f64 = std::f64::MAX;
 
     // Iterate through all the XOR keys and score the resulting stream.
     for key in 0..=255 {
@@ -142,22 +179,15 @@ pub fn break_single_char_xor(message_chunk: &[u8]) -> u8 {
         // Try a key from the set of all one byte keys.
         let decipher_attempt = xor_by_single_byte(message_chunk, key);
 
-        // Establish a variable to hold the score.
-        let mut total_score = 0.0;
+        // Calculate a score for each key attempt based on how close to
+        // english text it is.
+        let score = calculate_score(&decipher_attempt);
 
-        for byte in &decipher_attempt {
-            total_score += score_byte(*byte);
-        }
-
-        //Compare the score of each window with the best score so far.
-        if total_score > highest_score {
+        if score < lowest_score {
+            lowest_score = score;
             cipher_key = key;
-            highest_score = total_score;
         }
     }
-
-    // Print the best scoring string from the input data.
-    println!("key: {}", cipher_key as char);
     return cipher_key;
 }
 
@@ -166,7 +196,7 @@ pub fn break_repeating_xor(encoded_message: &[u8], keysize: &u8) {
 
     for i in 0..*keysize {
         let key = break_single_char_xor(&chunked_message[i as usize]);
-        println!("{}", key);
+        println!("{}", key as char);
     }
 
 }
@@ -176,6 +206,7 @@ fn main() {
     // Test to see whether hamming_distance passes the test set in the challenge.
     assert_eq!(hamming_distance(b"this is a test", b"wokka wokka!!!"), 37.0);
 
+    // Collect the contents of the file to decode.
     let encoded_message = match read_and_decode_file("base64.txt") {
         Ok(contents) => contents,
         Err(e) => {

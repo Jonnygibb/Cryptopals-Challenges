@@ -1,0 +1,45 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'break_repeating_xor'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=break_repeating_xor",
+                    "--package=break_repeating_xor"
+                ],
+                "filter": {
+                    "name": "break_repeating_xor",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'break_repeating_xor'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=break_repeating_xor",
+                    "--package=break_repeating_xor"
+                ],
+                "filter": {
+                    "name": "break_repeating_xor",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
