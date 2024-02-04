@@ -36,18 +36,34 @@ static EXPECTED_FREQUENCIES: phf::Map<u8, f64> = phf_map! {
     b'z' => 0.0003,
 };
 
-pub fn chi_squared_test(ciphertext: &[u8]) -> f64 {
-    
-    // Calculate the observed frequency of characters in the ciphertext.
-    let mut observed_freq = HashMap::<u8, f32>::new();
-    for char in ciphertext {
-        if is_alphabetic(*char) {
-            *observed_freq.entry(char.to_ascii_lowercase()).or_insert(0.0) += 1.0;
-        } else {
+pub fn get_character_counts(ciphertext: &[u8]) -> HashMap<u8, f64> {
+    // Find the number of occurances that each letter or punctuation
+    // has in a piece of text.
+    let mut char_counts: HashMap<u8, f64> = HashMap::new();
+    for &char in ciphertext.iter() {
+        
+        if is_control(char) {
             continue;
-        }
+        }  
+
+        let key = if is_alphabetic(char) {
+            char.to_ascii_lowercase()
+        } else if char == b' ' || char == b'\t' {
+            b' '
+        } else {
+            b'.'
+        };
+
+        let char_count = char_counts.entry(key).or_insert(0f64);
+        *char_count += 1f64;
     }
 
+    char_counts
+}
+
+pub fn chi_squared_test(ciphertext: &[u8]) -> f64 {
+
+    let observed_freq = get_character_counts(ciphertext);
     let mut chi_squared = 0.0;
 
     for (&letter, &observation) in observed_freq.iter() {
@@ -57,18 +73,6 @@ pub fn chi_squared_test(ciphertext: &[u8]) -> f64 {
 
     return chi_squared
 
-}
-
-pub fn xor_by_single_byte(stream: &[u8], byte: u8) -> Vec<u8>{
-    return stream.iter().map(|b| b ^ byte).collect();
-}
-
-pub fn is_alphabetic(byte: u8) -> bool {
-    (byte >= 0x41 && byte <= 0x5A) || (byte >= 0x61 && byte <= 0x7A)
-}
-
-pub fn is_control(u: u8) -> bool {
-    u < 0x20 || u == 0x7F
 }
 
 pub fn calculate_score(ciphertext: &[u8]) -> f64 {
@@ -89,6 +93,23 @@ pub fn calculate_score(ciphertext: &[u8]) -> f64 {
     return chi_square_stat
 }
 
+
+pub fn xor_by_single_byte(stream: &[u8], byte: u8) -> Vec<u8>{
+    return stream.iter().map(|b| b ^ byte).collect();
+}
+
+pub fn is_alphabetic(byte: u8) -> bool {
+    (byte >= 0x41 && byte <= 0x5A) || (byte >= 0x61 && byte <= 0x7A)
+}
+
+pub fn is_control(u: u8) -> bool {
+    u < 0x20 || u == 0x7F
+}
+
+pub fn vec_to_string(vec: &Vec<u8>) -> String {
+    let s = String::from_utf8_lossy(vec);
+    return s.to_string();
+}
 
 pub fn read_and_decode_file(filename: &str) -> Result<Vec<u8>, std::io::Error> {
     // Read the contents of the file into a Vec<u8>.
@@ -191,14 +212,26 @@ pub fn break_single_char_xor(message_chunk: &[u8]) -> u8 {
     return cipher_key;
 }
 
-pub fn break_repeating_xor(encoded_message: &[u8], keysize: &u8) {
+pub fn break_repeating_xor(encoded_message: &[u8], keysize: &u8) -> Vec<u8> {
     let chunked_message = transpose(encoded_message);
+    let mut encryption_key: Vec<u8> = Vec::<u8>::new();
 
     for i in 0..*keysize {
         let key = break_single_char_xor(&chunked_message[i as usize]);
-        println!("{}", key as char);
+        encryption_key.push(key);
     }
 
+    return encryption_key;
+}
+
+pub fn repeating_xor(message: &[u8], key: &[u8]) -> Vec<u8> {
+    
+    // Iterate over the message and apply the characters of key cyclicalally.
+    let encrypted = message.iter()
+                           .zip(key.iter().cycle())
+                           .map(|(&a, &b)| a ^ b)
+                           .collect();
+    return encrypted;
 }
 
 fn main() {
@@ -217,6 +250,11 @@ fn main() {
 
     let keysize = find_likeliest_keysize(&encoded_message);
 
-    let encryption_key = break_repeating_xor(&encoded_message, &keysize);
+    let encryption_key = &break_repeating_xor(&encoded_message, &keysize);
+
+    println!("Encryption key:\n{}", vec_to_string(encryption_key));
     
+    let decrypted_file = &repeating_xor(&encoded_message, &encryption_key);
+
+    println!("Decrypted text:\n{}", vec_to_string(decrypted_file));
 }
