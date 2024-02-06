@@ -185,8 +185,9 @@ pub fn find_likeliest_keysize(encoded_message: &[u8]) -> u8 {
     return key_scores[0].0;
 }
 
-pub fn transpose(encoded_message: &[u8]) -> Vec<Vec<u8>> {
-    return (0..29).map(|i| encoded_message.iter().skip(i).step_by(29).cloned().collect()).collect();
+pub fn transpose(encoded_message: &[u8], keysize: &u8) -> Vec<Vec<u8>> {
+    let block = *keysize as usize;
+    return (0..block).map(|i| encoded_message.iter().skip(i.into()).step_by(block).cloned().collect()).collect();
 }
 
 pub fn break_single_char_xor(message_chunk: &[u8]) -> u8 {
@@ -213,7 +214,7 @@ pub fn break_single_char_xor(message_chunk: &[u8]) -> u8 {
 }
 
 pub fn break_repeating_xor(encoded_message: &[u8], keysize: &u8) -> Vec<u8> {
-    let chunked_message = transpose(encoded_message);
+    let chunked_message = transpose(encoded_message, keysize);
     let mut encryption_key: Vec<u8> = Vec::<u8>::new();
 
     for i in 0..*keysize {
