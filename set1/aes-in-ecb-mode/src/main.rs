@@ -1,5 +1,6 @@
-use std::fs::{self, read};
+use std::fs::{self};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use openssl::symm::{decrypt, Cipher};
 
 
 pub fn read_and_decode_file(filename: &str) -> Result<Vec<u8>, std::io::Error> {
@@ -29,5 +30,13 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    let key = b"YELLOW SUBMARINE";
+
+    let cipher = Cipher::aes_128_ecb();
+
+    let decrypted_text = decrypt(cipher, key, None, &encoded_message).unwrap();
+
+    println!("Decrypted message {:?}", String::from_utf8_lossy(&decrypted_text))
 
 }
